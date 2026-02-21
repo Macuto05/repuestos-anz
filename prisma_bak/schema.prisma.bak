@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  password        String
+  nombre          String
+  telefono        String
+  rol             String    @default("vendedor")
+  activo          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  tienda          Tienda?
+  
+  @@index([email])
+}
+
+model Tienda {
+  id              String      @id @default(cuid())
+  usuarioId       String      @unique
+  usuario         Usuario     @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  
+  nombre          String
+  telefono        String
+  whatsapp        String?
+  ciudad          String
+  estado          String
+  direccion       String      @db.Text
+  activa          Boolean     @default(true)
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  productos       Producto[]
+  
+  @@index([ciudad, activa])
+}
+
+model Categoria {
+  id              String      @id @default(cuid())
+  nombre          String      @unique
+  slug            String      @unique
+  orden           Int         @default(0)
+  activa          Boolean     @default(true)
+  
+  productos       Producto[]
+  
+  @@index([activa, orden])
+}
+
+model MarcaVehiculo {
+  id              String      @id @default(cuid())
+  nombre          String      @unique
+  slug            String      @unique
+  activa          Boolean     @default(true)
+  
+  modelos         ModeloVehiculo[]
+  compatibilidades Compatibilidad[]
+  
+  @@index([activa])
+}
+
+model ModeloVehiculo {
+  id              String      @id @default(cuid())
+  marcaId         String
+  marca           MarcaVehiculo @relation(fields: [marcaId], references: [id], onDelete: Cascade)
+  
+  nombre          String
+  slug            String
+  activa          Boolean     @default(true)
+  
+  compatibilidades Compatibilidad[]
+  
+  @@unique([marcaId, slug])
+  @@index([marcaId, activa])
+}
+
+model Producto {
+  id              String      @id @default(cuid())
+  tiendaId        String
+  tienda          Tienda      @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
+  
+  nombre          String
+  descripcion     String?     @db.Text
+  
+  categoriaId     String
+  categoria       Categoria   @relation(fields: [categoriaId], references: [id])
+  
+  marcaRepuesto   String
+  precio          Decimal     @db.Decimal(10, 2)
+  stock           Int         @default(0)
+  
+  imagenes        String[]
+  imagenPrincipal String?
+  
+  disponible      Boolean     @default(true)
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  compatibilidades Compatibilidad[]
+  
+  @@index([categoriaId, disponible])
+  @@index([tiendaId, stock])
+  @@index([nombre, marcaRepuesto])
+}
+
+model Compatibilidad {
+  id              String      @id @default(cuid())
+  
+  productoId      String
+  producto        Producto    @relation(fields: [productoId], references: [id], onDelete: Cascade)
+  
+  marcaId         String
+  marca           MarcaVehiculo @relation(fields: [marcaId], references: [id])
+  modeloId        String?
+  modelo          ModeloVehiculo? @relation(fields: [modeloId], references: [id])
+  
+  anoInicio       Int?
+  anoFin          Int?
+  motor           String?
+  notas           String?     @db.Text
+  
+  createdAt       DateTime    @default(now())
+  
+  @@unique([productoId, marcaId, modeloId, anoInicio])
+  @@index([marcaId, modeloId])
+  @@index([productoId])
+}
