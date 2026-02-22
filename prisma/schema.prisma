@@ -9,178 +9,184 @@ datasource db {
 enum Rol {
   admin
   vendedor
+  cliente
 }
 
 model Usuario {
-  id              String    @id @default(cuid())
-  email           String    @unique
-  cedula          String?   @unique
-  password        String
-  nombre          String
-  telefono        String?
-  rol             Rol       @default(vendedor)
-  activo          Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  
-  tienda          Tienda?
-  ordenesCompra   OrdenCompra[]
-  ajustes         AjusteInventario[]
-  movimientos     MovimientoInventario[]
-  ventasRealizadas Venta[] @relation("VendedorVenta")
-  
-  // Relación opcional inversa con Cliente (si este usuario es un cliente)
-  cliente         Cliente?
-  
+  id        String   @id @default(cuid())
+  email     String   @unique
+  cedula    String?  @unique
+  password  String
+  nombre    String
+  telefono  String?
+  rol       Rol      @default(vendedor)
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  logsSeguridad LogSeguridad[]
+
+  tienda           Tienda?
+  ordenesCompra    OrdenCompra[]
+  ajustes          AjusteInventario[]
+  movimientos      MovimientoInventario[]
+  ventasRealizadas Venta[]                @relation("VendedorVenta")
+
+  // Perfiles de cliente por tienda
+  perfilesCliente PerfilCliente[]
+
   @@index([email])
 }
 
 model Tienda {
-  id              String      @id @default(cuid())
-  usuarioId       String      @unique
-  usuario         Usuario     @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  
-  nombre          String
-  telefono        String
-  whatsapp        String?
-  ciudad          String
-  estado          String
-  direccion       String      @db.Text
-  googleMapsUrl   String?
-  horario         Json?       // { "lunes": { "abierto": true, "horaApertura": "08:00", "horaCierre": "17:00" }, ... }
-  activa          Boolean     @default(true)
-  
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  
+  id        String  @id @default(cuid())
+  usuarioId String  @unique
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  nombre        String
+  telefono      String
+  whatsapp      String?
+  ciudad        String
+  estado        String
+  direccion     String  @db.Text
+  googleMapsUrl String?
+  horario       Json? // { "lunes": { "abierto": true, "horaApertura": "08:00", "horaCierre": "17:00" }, ... }
+  activa        Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   productos       Producto[]
   proveedores     Proveedor[]
   ordenesCompra   OrdenCompra[]
   ajustes         AjusteInventario[]
   movimientos     MovimientoInventario[]
   ventas          Venta[]
-  clientes        Cliente[]
-  
+  perfilesCliente PerfilCliente[]
+
   @@index([ciudad, activa])
 }
 
 model Categoria {
-  id              String      @id @default(cuid())
-  nombre          String      @unique
-  slug            String      @unique
-  orden           Int         @default(0)
-  activa          Boolean     @default(true)
-  
-  productos       Producto[]
-  
+  id     String  @id @default(cuid())
+  nombre String  @unique
+  slug   String  @unique
+  orden  Int     @default(0)
+  activa Boolean @default(true)
+
+  productos Producto[]
+
   @@index([activa, orden])
 }
 
 model MarcaVehiculo {
-  id              String      @id @default(cuid())
-  nombre          String      @unique
-  slug            String      @unique
-  activa          Boolean     @default(true)
-  
-  modelos         ModeloVehiculo[]
+  id     String  @id @default(cuid())
+  nombre String  @unique
+  slug   String  @unique
+  activa Boolean @default(true)
+
+  modelos          ModeloVehiculo[]
   compatibilidades Compatibilidad[]
-  
+
   @@index([activa])
 }
 
 model ModeloVehiculo {
-  id              String      @id @default(cuid())
-  marcaId         String
-  marca           MarcaVehiculo @relation(fields: [marcaId], references: [id], onDelete: Cascade)
-  
-  nombre          String
-  slug            String
-  activa          Boolean     @default(true)
-  
+  id      String        @id @default(cuid())
+  marcaId String
+  marca   MarcaVehiculo @relation(fields: [marcaId], references: [id], onDelete: Cascade)
+
+  nombre String
+  slug   String
+  activa Boolean @default(true)
+
   compatibilidades Compatibilidad[]
-  
+
   @@unique([marcaId, slug])
   @@index([marcaId, activa])
 }
 
 model Producto {
-  id              String      @id @default(cuid())
-  tiendaId        String
-  tienda          Tienda      @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
-  
-  nombre          String
-  codigoOEM       String?     @unique
-  descripcion     String?     @db.Text
-  
-  categoriaId     String
-  categoria       Categoria   @relation(fields: [categoriaId], references: [id])
-  
-  marcaRepuesto   String
-  precio          Decimal     @db.Decimal(10, 2)
-  stock           Int         @default(0)
-  stockMinimo     Int         @default(5)
-  
+  id       String @id @default(cuid())
+  tiendaId String
+  tienda   Tienda @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
+
+  nombre      String
+  codigoOEM   String?
+  descripcion String? @db.Text
+
+  categoriaId String
+  categoria   Categoria @relation(fields: [categoriaId], references: [id])
+
+  marcaRepuesto String
+  precio        Decimal @db.Decimal(10, 2)
+  stock         Int     @default(0)
+  stockMinimo   Int     @default(5)
+
   imagenes        String[]
   imagenPrincipal String?
-  
-  disponible      Boolean     @default(true)
-  
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  
+
+  disponible Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   compatibilidades Compatibilidad[]
-  comprasDetalles OrdenCompraDetalle[]
-  ventasDetalles  DetalleVenta[]
-  ajustesDetalles DetalleAjuste[]
-  movimientos     MovimientoDetalle[]
-  
+  comprasDetalles  OrdenCompraDetalle[]
+  ventasDetalles   DetalleVenta[]
+  ajustesDetalles  DetalleAjuste[]
+  movimientos      MovimientoDetalle[]
+
   @@index([categoriaId, disponible])
   @@index([tiendaId, stock])
   @@index([nombre, marcaRepuesto])
+  @@index([codigoOEM])
+  @@index([tiendaId, disponible, stock])
+  @@index([disponible, categoriaId, precio])
 }
 
 model Compatibilidad {
-  id              String      @id @default(cuid())
-  
-  productoId      String
-  producto        Producto    @relation(fields: [productoId], references: [id], onDelete: Cascade)
-  
-  marcaId         String
-  marca           MarcaVehiculo @relation(fields: [marcaId], references: [id])
-  modeloId        String?
-  modelo          ModeloVehiculo? @relation(fields: [modeloId], references: [id])
-  
-  anoInicio       Int?
-  anoFin          Int?
-  motor           String?
-  notas           String?     @db.Text
-  
-  createdAt       DateTime    @default(now())
-  
+  id String @id @default(cuid())
+
+  productoId String
+  producto   Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+
+  marcaId  String
+  marca    MarcaVehiculo   @relation(fields: [marcaId], references: [id])
+  modeloId String?
+  modelo   ModeloVehiculo? @relation(fields: [modeloId], references: [id])
+
+  anoInicio Int?
+  anoFin    Int?
+  motor     String?
+  notas     String? @db.Text
+
+  createdAt DateTime @default(now())
+
   @@unique([productoId, marcaId, modeloId, anoInicio])
   @@index([marcaId, modeloId])
   @@index([productoId])
 }
 
 model Proveedor {
-  id              String      @id @default(cuid())
-  tiendaId        String
-  tienda          Tienda      @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
-  
-  nombre          String
-  rif             String?
-  telefono        String?
-  correo          String?
-  direccion       String?     @db.Text
-  activo          Boolean     @default(true)
-  
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  
+  id       String @id @default(cuid())
+  tiendaId String
+  tienda   Tienda @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
+
+  nombre    String
+  rif       String?
+  telefono  String?
+  correo    String?
+  direccion String? @db.Text
+  activo    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ordenesCompra OrdenCompra[]
+
   @@index([tiendaId, activo])
   @@index([nombre])
-  
-  ordenesCompra   OrdenCompra[]
 }
 
 enum EstadoOrden {
@@ -191,52 +197,51 @@ enum EstadoOrden {
 }
 
 model OrdenCompra {
-  id              String      @id @default(cuid())
-  consecutivo     Int         @default(autoincrement())
-  
-  tiendaId        String
-  tienda          Tienda      @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
-  
-  proveedorId     String
-  proveedor       Proveedor   @relation(fields: [proveedorId], references: [id])
-  
-  usuarioId       String
-  usuario         Usuario     @relation(fields: [usuarioId], references: [id])
-  
-  estado          EstadoOrden @default(PENDIENTE)
-  totalEstimado   Decimal     @default(0) @db.Decimal(10, 2)
-  fechaSolicitud  DateTime    @default(now())
-  fechaLlegada    DateTime?
-  observaciones   String?     @db.Text
-  
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  
+  id          String @id @default(cuid())
+  consecutivo Int    @default(autoincrement())
+
+  tiendaId String
+  tienda   Tienda @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
+
+  proveedorId String
+  proveedor   Proveedor @relation(fields: [proveedorId], references: [id])
+
+  usuarioId String
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+
+  estado         EstadoOrden @default(PENDIENTE)
+  totalEstimado  Decimal     @default(0) @db.Decimal(10, 2)
+  fechaSolicitud DateTime    @default(now())
+  fechaLlegada   DateTime?
+  observaciones  String?     @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  detalles    OrdenCompraDetalle[]
+  movimientos MovimientoInventario[]
+
   @@unique([tiendaId, consecutivo])
   @@index([proveedorId])
   @@index([estado])
-  
-  detalles        OrdenCompraDetalle[]
-  movimientos     MovimientoInventario[]
+  @@index([tiendaId, estado, fechaSolicitud(sort: Desc)])
 }
 
 model OrdenCompraDetalle {
-  id                 String      @id @default(cuid())
-  ordenId            String
-  orden              OrdenCompra @relation(fields: [ordenId], references: [id], onDelete: Cascade)
-  
-  productoId         String
-  producto           Producto    @relation(fields: [productoId], references: [id])
-  
+  id      String      @id @default(cuid())
+  ordenId String
+  orden   OrdenCompra @relation(fields: [ordenId], references: [id], onDelete: Cascade)
+
+  productoId String
+  producto   Producto @relation(fields: [productoId], references: [id])
+
   cantidadSolicitada Int
-  cantidadRecibida   Int         @default(0)
-  costoUnitario      Decimal     @db.Decimal(10, 2)
-  
+  cantidadRecibida   Int     @default(0)
+  costoUnitario      Decimal @db.Decimal(10, 2)
+
   @@index([ordenId])
   @@index([productoId])
 }
-
-
 
 enum MotivoAjuste {
   ROTURA
@@ -249,41 +254,42 @@ enum MotivoAjuste {
 }
 
 model AjusteInventario {
-  id              String         @id @default(cuid())
-  consecutivo     Int            @default(autoincrement())
-  
-  tiendaId        String
-  tienda          Tienda         @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
-  
-  usuarioId       String
-  usuario         Usuario        @relation(fields: [usuarioId], references: [id])
-  
-  fecha           DateTime       @default(now())
-  motivo          MotivoAjuste?        
-  observaciones   String?        @db.Text
-  
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  
-  detalles        DetalleAjuste[]
-  movimientos     MovimientoInventario[]
-  
+  id          String @id @default(cuid())
+  consecutivo Int    @default(autoincrement())
+
+  tiendaId String
+  tienda   Tienda @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
+
+  usuarioId String
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+
+  fecha         DateTime      @default(now())
+  motivo        MotivoAjuste?
+  observaciones String?       @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  detalles    DetalleAjuste[]
+  movimientos MovimientoInventario[]
+
   @@unique([tiendaId, consecutivo])
   @@index([fecha])
+  @@index([tiendaId, fecha(sort: Desc)])
 }
 
 model DetalleAjuste {
-  id              String           @id @default(cuid())
-  
-  ajusteId        String
-  ajuste          AjusteInventario @relation(fields: [ajusteId], references: [id], onDelete: Cascade)
-  
-  productoId      String
-  producto        Producto         @relation(fields: [productoId], references: [id])
-  
-  cantidad        Int
-  tipo            MovimientoTipo
-  
+  id String @id @default(cuid())
+
+  ajusteId String
+  ajuste   AjusteInventario @relation(fields: [ajusteId], references: [id], onDelete: Cascade)
+
+  productoId String
+  producto   Producto @relation(fields: [productoId], references: [id])
+
+  cantidad Int
+  tipo     MovimientoTipo
+
   @@index([ajusteId])
   @@index([productoId])
 }
@@ -295,135 +301,210 @@ enum MovimientoTipo {
 }
 
 model MovimientoInventario {
-  id              String         @id @default(cuid())
-  
-  tiendaId        String
-  tienda          Tienda         @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
-  
-  usuarioId       String
-  usuario         Usuario        @relation(fields: [usuarioId], references: [id])
-  
-  fecha           DateTime       @default(now())
-  tipo            MovimientoTipo
-  referencia      String?        
-  observaciones   String?        @db.Text
-  
+  id String @id @default(cuid())
+
+  tiendaId String
+  tienda   Tienda @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
+
+  usuarioId String
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+
+  fecha         DateTime       @default(now())
+  tipo          MovimientoTipo
+  referencia    String?
+  observaciones String?        @db.Text
+
   // Documentos Origen
-  ordenCompraId   String?
-  ordenCompra     OrdenCompra?   @relation(fields: [ordenCompraId], references: [id])
-  
-  ajusteId        String?
-  ajuste          AjusteInventario? @relation(fields: [ajusteId], references: [id])
-  
-  ventaId         String?       
-  venta           Venta?         @relation(fields: [ventaId], references: [id])
-  
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  
-  detalles        MovimientoDetalle[]
-  
+  ordenCompraId String?
+  ordenCompra   OrdenCompra? @relation(fields: [ordenCompraId], references: [id])
+
+  ajusteId String?
+  ajuste   AjusteInventario? @relation(fields: [ajusteId], references: [id])
+
+  ventaId String?
+  venta   Venta?  @relation(fields: [ventaId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  detalles MovimientoDetalle[]
+
   @@index([fecha])
   @@index([ordenCompraId])
   @@index([ajusteId])
   @@index([tipo])
+  @@index([tiendaId, fecha, tipo])
 }
 
 model MovimientoDetalle {
-  id                 String               @id @default(cuid())
-  
-  movimientoId       String
-  movimiento         MovimientoInventario @relation(fields: [movimientoId], references: [id], onDelete: Cascade)
-  
-  productoId         String
-  producto           Producto             @relation(fields: [productoId], references: [id])
-  
-  cantidad           Int
-  stockResultante    Int
-  
+  id String @id @default(cuid())
+
+  movimientoId String
+  movimiento   MovimientoInventario @relation(fields: [movimientoId], references: [id], onDelete: Cascade)
+
+  productoId String
+  producto   Producto @relation(fields: [productoId], references: [id])
+
+  cantidad        Int
+  stockResultante Int
+
   @@index([movimientoId])
   @@index([productoId])
 }
 
 // --- MÓDULO DE VENTAS Y CLIENTES ---
 
-model Cliente {
-  id              String    @id @default(cuid())
-  tiendaId        String
-  tienda          Tienda    @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
-  
-  nombre          String
-  apellido        String?
-  cedula          String    // Se usa como identificador único del cliente en la tienda
-  telefono        String?
-  email           String?
-  direccion       String?   @db.Text
-  
-  // Relación opcional con un Usuario del sistema (para futuro login)
-  usuarioId       String?   @unique
-  usuario         Usuario?  @relation(fields: [usuarioId], references: [id])
-  
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  
-  ventas          Venta[]
+model PerfilCliente {
+  id        String @id @default(cuid())
+  usuarioId String
+  tiendaId  String
 
-  @@unique([tiendaId, cedula]) // La cédula es única por tienda (o global si se prefiere)
-  @@index([nombre, apellido])
-  @@index([telefono])
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tienda  Tienda  @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
+
+  notas                  String?  @db.Text
+  descuentoPersonalizado Decimal? @db.Decimal(5, 2)
+
+  primeraCompra DateTime  @default(now())
+  ultimaCompra  DateTime?
+  totalCompras  Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ventas Venta[]
+
+  @@unique([usuarioId, tiendaId])
+  @@index([tiendaId])
+  @@index([usuarioId])
+  @@index([tiendaId, totalCompras(sort: Desc)])
 }
 
 enum MetodoPago {
-  EFECTIVO
+  EFECTIVO_BS
   PAGO_MOVIL
+  TRANSFERENCIA
   PUNTO
-  ZELLE
+  DIVISA
   MIXTO
 }
 
 model Venta {
-  id              String      @id @default(cuid())
-  consecutivo     Int         @default(autoincrement())
-  
-  tiendaId        String
-  tienda          Tienda      @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
-  
-  usuarioId       String      // Vendedor que registró la venta
-  usuario         Usuario     @relation("VendedorVenta", fields: [usuarioId], references: [id])
-  
-  clienteId       String?     // Cliente registrado (opcional, podría ser venta anónima)
-  cliente         Cliente?    @relation(fields: [clienteId], references: [id])
-  
+  id          String @id @default(cuid())
+  consecutivo Int    @default(autoincrement())
+
+  tiendaId String
+  tienda   Tienda @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
+
+  usuarioId String // Vendedor que registró la venta
+  usuario   Usuario @relation("VendedorVenta", fields: [usuarioId], references: [id])
+
+  perfilClienteId String? // Cliente registrado (opcional, podría ser venta anónima)
+  perfilCliente   PerfilCliente? @relation(fields: [perfilClienteId], references: [id])
+
   fecha           DateTime    @default(now())
-  metodoPago      MetodoPago  @default(EFECTIVO)
-  total           Decimal     @db.Decimal(10, 2)
-  observaciones   String?     @db.Text
+  
+  totalUSD        Decimal     @db.Decimal(10, 2)
+  totalBs         Decimal?    @db.Decimal(12, 2)
+  tasaDolar       Decimal?    @db.Decimal(10, 2)
+  
+  metodoPago      MetodoPago  @default(EFECTIVO_BS)
+  observaciones   String? @db.Text
   
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   
   detalles        DetalleVenta[]
+  pagos           PagoVenta[]
   movimientos     MovimientoInventario[] // Relación con el kárdex
 
   @@unique([tiendaId, consecutivo])
   @@index([fecha])
-  @@index([clienteId])
+  @@index([perfilClienteId])
   @@index([usuarioId])
+  @@index([tiendaId, fecha(sort: Desc)])
+  @@index([metodoPago])
+}
+
+model PagoVenta {
+  id           String      @id @default(cuid())
+  ventaId      String
+  venta        Venta       @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  
+  metodoPago   MetodoPago
+  montoUSD     Decimal     @db.Decimal(10, 2)
+  montoBs      Decimal?    @db.Decimal(12, 2)
+  referencia   String?
+  
+  createdAt    DateTime    @default(now())
+  
+  @@index([ventaId])
 }
 
 model DetalleVenta {
-  id              String    @id @default(cuid())
-  
-  ventaId         String
-  venta           Venta     @relation(fields: [ventaId], references: [id], onDelete: Cascade)
-  
-  productoId      String
-  producto        Producto  @relation(fields: [productoId], references: [id])
-  
-  cantidad        Int
-  precioUnitario  Decimal   @db.Decimal(10, 2)
-  subtotal        Decimal   @db.Decimal(10, 2) // cantidad * precioUnitario
-  
+  id String @id @default(cuid())
+
+  ventaId String
+  venta   Venta  @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+
+  productoId String
+  producto   Producto @relation(fields: [productoId], references: [id])
+
+  cantidad       Int
+  precioUnitario Decimal @db.Decimal(10, 2)
+  subtotal       Decimal @db.Decimal(10, 2) // cantidad * precioUnitario
+
   @@index([ventaId])
   @@index([productoId])
+}
+
+// --- LOGS DE SEGURIDAD ---
+
+enum EventoSeguridad {
+  ACCESO_NO_AUTORIZADO
+  MULTIPLE_INTENTOS_FALLIDOS
+  PATRON_SOSPECHOSO
+}
+
+enum SeveridadEvento {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model LogSeguridad {
+  id          String   @id @default(cuid())
+  timestamp   DateTime @default(now())
+  
+  evento      EventoSeguridad
+  severidad   SeveridadEvento @default(WARNING)
+  
+  // Usuario que intentó el acceso
+  usuarioId       String
+  usuario         Usuario @relation(fields: [usuarioId], references: [id])
+  tiendaPropiaId  String  // Tienda del usuario atacante
+  emailUsuario    String  // Para búsquedas rápidas
+  
+  // Recurso que intentó acceder
+  recursoTipo       String  // "producto", "proveedor", "venta", etc.
+  recursoId         String
+  tiendaObjetivoId  String  // Tienda dueña del recurso
+  
+  // Contexto de la petición
+  accion      String   // "UPDATE", "DELETE", "READ"
+  ruta        String?  // URL que intentó acceder
+  metodo      String?  // "GET", "POST", "PUT", "DELETE"
+  ip          String?
+  userAgent   String?  @db.Text
+  
+  // Metadata adicional
+  detalles    Json?    // Información adicional en formato JSON
+  resuelto    Boolean  @default(false)  // Si el admin ya revisó el incidente
+  notas       String?  @db.Text         // Notas del admin sobre la investigación
+  
+  @@index([timestamp])
+  @@index([usuarioId, timestamp])
+  @@index([tiendaPropiaId, timestamp])
+  @@index([evento, severidad])
+  @@index([resuelto, severidad])
 }

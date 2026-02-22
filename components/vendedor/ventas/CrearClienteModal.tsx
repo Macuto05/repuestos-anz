@@ -6,15 +6,14 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { UserPlus, Loader2 } from "lucide-react";
-import { crearCliente } from "@/lib/actions-ventas";
+import { obtenerOCrearPerfilCliente } from "@/lib/actions-ventas";
 import { toast } from "sonner";
 
 interface CrearClienteModalProps {
-    tiendaId: string;
     onClienteCreado: (cliente: any) => void;
 }
 
-export function CrearClienteModal({ tiendaId, onClienteCreado }: CrearClienteModalProps) {
+export function CrearClienteModal({ onClienteCreado }: CrearClienteModalProps) {
     const [open, setOpen] = useState(false);
     const [isPending, startTransition] = useTransition();
     const [formData, setFormData] = useState({
@@ -34,18 +33,24 @@ export function CrearClienteModal({ tiendaId, onClienteCreado }: CrearClienteMod
         }
 
         startTransition(async () => {
-            const resultado = await crearCliente({
-                tiendaId,
-                ...formData
+            const resultado = await obtenerOCrearPerfilCliente({
+                nombre: formData.nombre,
+                cedula: formData.cedula,
+                telefono: formData.telefono,
+                email: formData.email
             });
 
-            if (resultado.success && resultado.data) {
+            if (resultado.success) {
                 toast.success("Cliente registrado correctamente");
-                onClienteCreado(resultado.data);
+                onClienteCreado({
+                    id: resultado.data.id,
+                    nombre: resultado.data.usuario.nombre,
+                    cedula: resultado.data.usuario.cedula
+                });
                 setOpen(false);
                 setFormData({ nombre: "", cedula: "", telefono: "", email: "", direccion: "" });
             } else {
-                toast.error(resultado.error as string || "Error al registrar cliente");
+                toast.error(resultado.error || "Error al registrar cliente");
             }
         });
     };

@@ -15,11 +15,13 @@ export default async function ProveedoresPage({
     const page = typeof params.page === 'string' ? parseInt(params.page) : 1;
     const search = typeof params.search === 'string' ? params.search : '';
 
-    const { proveedores = [], total = 0, totalPages = 0, error } = await listarProveedores(page, 10, search);
+    const resultado = await listarProveedores(page, 10, search);
 
-    if (error) {
-        return <div className="p-8 text-red-500">Error: {error}</div>;
+    if ('error' in resultado && resultado.error) {
+        return <div className="p-8 text-red-500">Error: {resultado.error}</div>;
     }
+
+    const { proveedores = [], total = 0, totalPages = 0 } = resultado as any;
 
     return (
         <div className="space-y-6">

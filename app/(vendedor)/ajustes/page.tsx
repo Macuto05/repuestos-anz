@@ -32,7 +32,6 @@ export default async function AjustesPage({
     }
 
     const { ajustes, total, totalPages } = await obtenerAjustes(
-        usuario.tienda.id,
         page,
         10,
         search,

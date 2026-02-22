@@ -40,7 +40,7 @@ export default async function POSPage() {
 
     return (
         <div className="space-y-6">
-            <POSClientPage tiendaId={tienda.id} usuarioId={usuario.id} />
+            <POSClientPage />
         </div>
     );
 }

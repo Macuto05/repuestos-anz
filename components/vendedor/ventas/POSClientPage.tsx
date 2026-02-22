@@ -4,7 +4,8 @@ import { useState, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Search, ShoppingCart, UserPlus, Trash2, Plus, Minus, FileText, Check, X, CreditCard, DollarSign } from "lucide-react";
 import { toast } from "sonner";
-import { crearVenta, buscarClientes, crearCliente, buscarProductosPOS } from "@/lib/actions-ventas";
+import { crearVenta, buscarClientes, obtenerOCrearPerfilCliente, buscarProductosPOS } from "@/lib/actions-ventas";
+import { MetodoPago } from "@prisma/client";
 import { useSession } from "next-auth/react";
 import Image from "next/image";
 
@@ -19,9 +20,17 @@ type ProductoCarrito = {
     imagen?: string;
 };
 
-type MetodoPago = "EFECTIVO" | "PAGO_MOVIL" | "PUNTO" | "ZELLE" | "MIXTO";
+// Eliminado type MetodoPago local para usar el importado de Prisma
 
-export default function POSClientPage({ tiendaId, usuarioId }: { tiendaId: string, usuarioId: string }) {
+type PagoMixto = {
+    id: string; // for React key
+    metodoPago: MetodoPago;
+    montoUSD: number;
+    montoBs?: number; // Calculated or entered
+    referencia?: string;
+};
+
+export default function POSClientPage() {
     const router = useRouter();
     const [isPending, startTransition] = useTransition();
     const [query, setQuery] = useState("");
@@ -30,19 +39,21 @@ export default function POSClientPage({ tiendaId, usuarioId }: { tiendaId: strin
     const [clienteQuery, setClienteQuery] = useState("");
     const [clientesEncontrados, setClientesEncontrados] = useState<any[]>([]);
     const [clienteSeleccionado, setClienteSeleccionado] = useState<any | null>(null);
-    const [metodoPago, setMetodoPago] = useState<MetodoPago>("EFECTIVO");
+    const [metodoPago, setMetodoPago] = useState<MetodoPago>("EFECTIVO_BS");
+    const [tasaDolar, setTasaDolar] = useState<number | "">("");
+    const [pagosMixtos, setPagosMixtos] = useState<PagoMixto[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [showClienteForm, setShowClienteForm] = useState(false);
 
     // Estados para nuevo cliente
-    const [nuevoCliente, setNuevoCliente] = useState({ nombre: "", apellido: "", cedula: "", telefono: "", direccion: "" });
+    const [nuevoCliente, setNuevoCliente] = useState({ nombre: "", cedula: "", telefono: "", email: "" });
 
     // Búsqueda de Productos (Debounce manual simple)
     useEffect(() => {
         const delayDebounceFn = setTimeout(async () => {
             if (query.length > 2) {
                 setIsSearching(true);
-                const resultados = await buscarProductosPOS(tiendaId, query);
+                const resultados = await buscarProductosPOS(query);
                 setProductos(resultados);
                 setIsSearching(false);
             } else {
@@ -51,13 +62,13 @@ export default function POSClientPage({ tiendaId, usuarioId }: { tiendaId: strin
         }, 500);
 
         return () => clearTimeout(delayDebounceFn);
-    }, [query, tiendaId]);
+    }, [query]);
 
     // Búsqueda de Clientes
     useEffect(() => {
         const delayDebounceFn = setTimeout(async () => {
             if (clienteQuery.length > 2 && !clienteSeleccionado) {
-                const resultados = await buscarClientes(tiendaId, clienteQuery);
+                const resultados = await buscarClientes(clienteQuery);
                 setClientesEncontrados(resultados || []);
             } else {
                 setClientesEncontrados([]);
@@ -65,7 +76,7 @@ export default function POSClientPage({ tiendaId, usuarioId }: { tiendaId: strin
         }, 300);
 
         return () => clearTimeout(delayDebounceFn);
-    }, [clienteQuery, tiendaId, clienteSeleccionado]);
+    }, [clienteQuery, clienteSeleccionado]);
 
     const agregarAlCarrito = (producto: any) => {
         setCarrito((prev) => {
@@ -117,12 +128,37 @@ export default function POSClientPage({ tiendaId, usuarioId }: { tiendaId: strin
     const procesarVenta = async () => {
         if (carrito.length === 0) return;
 
+        // Validaciones previas
+        if (["EFECTIVO_BS", "PAGO_MOVIL", "TRANSFERENCIA", "PUNTO", "MIXTO"].includes(metodoPago) && (!tasaDolar || Number(tasaDolar) <= 0)) {
+            toast.error("Debe ingresar una Tasa BCV válida para usar Bolívares");
+            return;
+        }
+
+        let pagosParaBackend = undefined;
+        if (metodoPago === "MIXTO") {
+            const sumUSD = pagosMixtos.reduce((s, p) => s + (Number(p.montoUSD) || 0), 0);
+            if (pagosMixtos.length < 2) {
+                toast.error("Un pago mixto requiere al menos 2 métodos");
+                return;
+            }
+            if (Math.abs(sumUSD - totalVenta) > 0.05) { // allowed a small precision difference
+                toast.error(`La suma de los pagos ($${sumUSD.toFixed(2)}) no coincide con el total ($${totalVenta.toFixed(2)})`);
+                return;
+            }
+            pagosParaBackend = pagosMixtos.map(p => ({
+                metodoPago: p.metodoPago,
+                montoUSD: Number(p.montoUSD),
+                montoBs: Number(p.montoBs) || undefined,
+                referencia: p.referencia || undefined
+            }));
+        }
+
         startTransition(async () => {
             const resultado = await crearVenta({
-                tiendaId,
-                usuarioId,
-                clienteId: clienteSeleccionado?.id,
+                perfilClienteId: clienteSeleccionado?.id,
                 metodoPago,
+                tasaDolar: Number(tasaDolar) || undefined,
+                pagos: pagosParaBackend,
                 observaciones: `Venta POS - ${new Date().toLocaleString()}`,
                 detalles: carrito.map(p => ({
                     productoId: p.id,
@@ -136,6 +172,8 @@ export default function POSClientPage({ tiendaId, usuarioId }: { tiendaId: strin
                 setCarrito([]);
                 setClienteSeleccionado(null);
                 setClienteQuery("");
+                setPagosMixtos([]);
+                setMetodoPago("EFECTIVO_BS");
                 router.refresh();
             } else {
                 toast.error(resultado.error || "Error al procesar venta");
@@ -144,8 +182,8 @@ export default function POSClientPage({ tiendaId, usuarioId }: { tiendaId: strin
     };
 
     const registrarClienteRapido = async () => {
-        if (!nuevoCliente.nombre || !nuevoCliente.cedula || !nuevoCliente.telefono || !nuevoCliente.direccion) {
-            toast.error("Todos los campos son obligatorios");
+        if (!nuevoCliente.nombre || !nuevoCliente.cedula || !nuevoCliente.telefono) {
+            toast.error("Nombre, Cédula y Teléfono son obligatorios");
             return;
         }
         if (nuevoCliente.cedula.length < 6 || nuevoCliente.cedula.length > 9) {
@@ -157,17 +195,22 @@ export default function POSClientPage({ tiendaId, usuarioId }: { tiendaId: strin
             return;
         }
         startTransition(async () => {
-            const res = await crearCliente({
-                tiendaId,
+            const res = await obtenerOCrearPerfilCliente({
                 ...nuevoCliente
             });
-            if (res.success && res.data) {
-                setClienteSeleccionado(res.data);
-                setClienteQuery(`${res.data.nombre} ${res.data.apellido || ''}`.trim());
+            if (res.success) {
+                // Adaptamos la respuesta del perfil al estado del componente
+                const perfilAdaptado = {
+                    id: res.data.id,
+                    nombre: res.data.usuario.nombre,
+                    cedula: res.data.usuario.cedula
+                };
+                setClienteSeleccionado(perfilAdaptado);
+                setClienteQuery(res.data.usuario.nombre);
                 setShowClienteForm(false);
-                toast.success("Cliente registrado y seleccionado");
+                toast.success("Cliente vinculado correctamente");
             } else {
-                toast.error(res.error as string);
+                toast.error(res.error);
             }
         });
     };
@@ -346,26 +389,15 @@ export default function POSClientPage({ tiendaId, usuarioId }: { tiendaId: strin
                                                 <button onClick={() => setShowClienteForm(false)}><X className="w-4 h-4 text-slate-400" /></button>
                                             </div>
                                             <div className="space-y-3">
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <input
-                                                        placeholder="Nombre"
-                                                        className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                                        value={nuevoCliente.nombre}
-                                                        onChange={e => {
-                                                            const val = e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '');
-                                                            setNuevoCliente({ ...nuevoCliente, nombre: val });
-                                                        }}
-                                                    />
-                                                    <input
-                                                        placeholder="Apellido"
-                                                        className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                                        value={nuevoCliente.apellido}
-                                                        onChange={e => {
-                                                            const val = e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '');
-                                                            setNuevoCliente({ ...nuevoCliente, apellido: val });
-                                                        }}
-                                                    />
-                                                </div>
+                                                <input
+                                                    placeholder="Nombre Completo"
+                                                    className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                    value={nuevoCliente.nombre}
+                                                    onChange={e => {
+                                                        const val = e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '');
+                                                        setNuevoCliente({ ...nuevoCliente, nombre: val });
+                                                    }}
+                                                />
 
                                                 <div>
                                                     <input
@@ -407,14 +439,6 @@ export default function POSClientPage({ tiendaId, usuarioId }: { tiendaId: strin
                                                     )}
                                                 </div>
 
-                                                <textarea
-                                                    placeholder="Dirección"
-                                                    rows={2}
-                                                    className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded text-slate-900 placeholder:text-slate-400 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                                    value={nuevoCliente.direccion}
-                                                    onChange={e => setNuevoCliente({ ...nuevoCliente, direccion: e.target.value })}
-                                                />
-
                                                 <button
                                                     onClick={registrarClienteRapido}
                                                     disabled={
@@ -424,8 +448,7 @@ export default function POSClientPage({ tiendaId, usuarioId }: { tiendaId: strin
                                                         nuevoCliente.cedula.length < 6 ||
                                                         nuevoCliente.cedula.length > 9 ||
                                                         !nuevoCliente.telefono ||
-                                                        nuevoCliente.telefono.length !== 11 ||
-                                                        !nuevoCliente.direccion
+                                                        nuevoCliente.telefono.length !== 11
                                                     }
                                                     className="w-full bg-slate-900 text-white text-xs font-medium py-2 rounded mt-2 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                                 >
@@ -440,25 +463,125 @@ export default function POSClientPage({ tiendaId, usuarioId }: { tiendaId: strin
 
                         {/* Totales y Pago */}
                         <div className="p-6 bg-slate-50 border-t border-slate-200 rounded-b-2xl">
-                            <div className="flex justify-between items-center mb-4">
-                                <span className="text-slate-500 font-medium">Total a Pagar</span>
-                                <span className="text-2xl font-black text-slate-900">${totalVenta.toFixed(2)}</span>
+                            <div className="space-y-3 mb-4">
+                                <div className="flex justify-between items-center bg-blue-50/50 p-2 rounded-lg border border-blue-100">
+                                    <span className="text-sm font-semibold text-blue-900">Tasa del Día (Bs/$)</span>
+                                    <div className="relative w-32">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium text-sm">Bs</span>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={tasaDolar}
+                                            onChange={(e) => setTasaDolar(e.target.value === '' ? '' : Number(e.target.value))}
+                                            placeholder="0.00"
+                                            className="w-full pl-9 pr-3 py-1.5 text-right font-bold text-slate-900 bg-white border border-blue-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex justify-between items-end">
+                                    <div>
+                                        <span className="text-slate-500 font-medium text-sm block">Total USD</span>
+                                        <span className="text-3xl font-black text-emerald-600">${totalVenta.toFixed(2)}</span>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className="text-slate-500 font-medium text-xs block">Equivalente Bs</span>
+                                        <span className="text-xl font-bold text-slate-800">
+                                            {tasaDolar ? `Bs ${(totalVenta * Number(tasaDolar)).toFixed(2)}` : 'Bs 0.00'}
+                                        </span>
+                                    </div>
+                                </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-2 mb-4">
-                                {(["EFECTIVO", "PAGO_MOVIL", "PUNTO", "ZELLE"] as MetodoPago[]).map((m) => (
-                                    <button
-                                        key={m}
-                                        onClick={() => setMetodoPago(m)}
-                                        className={`text-xs font-bold py-2 px-1 rounded border transition-all ${metodoPago === m
-                                            ? "bg-slate-900 text-white border-slate-900"
-                                            : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
-                                            }`}
-                                    >
-                                        {m.replace("_", " ")}
-                                    </button>
-                                ))}
+                            <div className="mb-4 space-y-2">
+                                <label className="text-xs font-bold text-slate-500 uppercase">Método de Pago</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {(["EFECTIVO_BS", "PAGO_MOVIL", "TRANSFERENCIA", "PUNTO", "DIVISA", "MIXTO"] as MetodoPago[]).map((m) => (
+                                        <button
+                                            key={m}
+                                            onClick={() => setMetodoPago(m)}
+                                            className={`text-[10px] font-bold py-2 px-1 rounded border transition-all truncate text-center ${metodoPago === m
+                                                ? "bg-slate-900 text-white border-slate-900 shadow-md"
+                                                : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
+                                                }`}
+                                            title={m.replace("_", " ")}
+                                        >
+                                            {m.replace("_", " ")}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
+
+                            {metodoPago === "MIXTO" && (
+                                <div className="mb-4 bg-white p-3 rounded-lg border border-slate-200 shadow-sm space-y-3">
+                                    <div className="flex justify-between items-center">
+                                        <h4 className="text-xs font-bold text-slate-700">Desglose Mixto</h4>
+                                        <button
+                                            onClick={() => setPagosMixtos([...pagosMixtos, { id: Date.now().toString(), metodoPago: "PAGO_MOVIL", montoUSD: 0 }])}
+                                            className="text-xs flex items-center gap-1 text-blue-600 hover:text-blue-700 font-semibold"
+                                        >
+                                            <Plus className="w-3 h-3" /> Agregar
+                                        </button>
+                                    </div>
+                                    {pagosMixtos.map((pago, index) => (
+                                        <div key={pago.id} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start bg-slate-50 p-2 rounded border border-slate-100">
+                                            <select
+                                                value={pago.metodoPago}
+                                                onChange={(e) => {
+                                                    const newPagos = [...pagosMixtos];
+                                                    newPagos[index].metodoPago = e.target.value as MetodoPago;
+                                                    setPagosMixtos(newPagos);
+                                                }}
+                                                className="text-xs border-slate-300 rounded py-1 px-2 w-full focus:ring-blue-500"
+                                            >
+                                                <option value="EFECTIVO_BS">Efectivo Bs</option>
+                                                <option value="PAGO_MOVIL">Pago Móvil</option>
+                                                <option value="TRANSFERENCIA">Transferencia</option>
+                                                <option value="PUNTO">Punto</option>
+                                                <option value="DIVISA">Divisa (USD)</option>
+                                            </select>
+                                            <div className="relative">
+                                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">$</span>
+                                                <input
+                                                    type="number" step="0.01" placeholder="Monto $"
+                                                    value={pago.montoUSD || ''}
+                                                    onChange={(e) => {
+                                                        const val = Number(e.target.value);
+                                                        const newPagos = [...pagosMixtos];
+                                                        newPagos[index].montoUSD = val;
+                                                        if (tasaDolar && ["EFECTIVO_BS", "PAGO_MOVIL", "TRANSFERENCIA", "PUNTO"].includes(pago.metodoPago)) {
+                                                            newPagos[index].montoBs = val * Number(tasaDolar);
+                                                        }
+                                                        setPagosMixtos(newPagos);
+                                                    }}
+                                                    className="w-full pl-5 pr-2 py-1 text-[11px] border-slate-300 rounded focus:ring-blue-500 font-medium"
+                                                />
+                                            </div>
+                                            <button onClick={() => setPagosMixtos(pagosMixtos.filter((_, i) => i !== index))} className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded mt-0.5">
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                            {["PAGO_MOVIL", "TRANSFERENCIA"].includes(pago.metodoPago) && (
+                                                <input
+                                                    type="text" placeholder="Referencia (ej: 0145...)"
+                                                    value={pago.referencia || ''}
+                                                    onChange={(e) => {
+                                                        const newPagos = [...pagosMixtos];
+                                                        newPagos[index].referencia = e.target.value;
+                                                        setPagosMixtos(newPagos);
+                                                    }}
+                                                    className="col-span-3 mt-1 w-full px-2 py-1 text-[10px] border-slate-300 rounded focus:ring-blue-500"
+                                                />
+                                            )}
+                                        </div>
+                                    ))}
+                                    <div className="flex justify-between items-center text-xs mt-2 pt-2 border-t border-slate-100">
+                                        <span className="text-slate-500">Restante:</span>
+                                        <span className={`font-bold ${totalVenta - pagosMixtos.reduce((s, p) => s + (Number(p.montoUSD) || 0), 0) === 0 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                                            ${Math.max(0, totalVenta - pagosMixtos.reduce((s, p) => s + (Number(p.montoUSD) || 0), 0)).toFixed(2)}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
 
                             <button
                                 onClick={procesarVenta}

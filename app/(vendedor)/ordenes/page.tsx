@@ -31,7 +31,6 @@ export default async function OrdenesPage({
     }
 
     const { ordenes, total, totalPages } = await obtenerOrdenes(
-        usuario.tienda.id,
         page,
         10,
         search,

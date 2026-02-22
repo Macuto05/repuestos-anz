@@ -142,7 +142,7 @@ export function OrdenesClientPage({
 
         setIsLoadingReceive(orderToReceive);
         try {
-            await recibirOrdenCompra(orderToReceive, tiendaId, usuarioId);
+            await recibirOrdenCompra(orderToReceive);
             router.refresh();
         } catch (error) {
             alert('Error al recibir orden');

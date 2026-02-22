@@ -1,9 +1,10 @@
 'use server';
 
-import prisma from '@/lib/prisma';
+import prisma, { runInTiendaContext } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
+import { obtenerSesionValidada, verificarAccesoRecurso } from '@/lib/auth/permissions';
 
 // --- Tipos ---
 export type CrearProveedorDTO = {
@@ -26,48 +27,41 @@ export async function listarProveedores(
     limit: number = 10,
     search: string = ''
 ) {
-    const session = await auth();
-    if (!session?.user?.id) return { error: 'No autorizado' };
-
     try {
-        // Buscar la tienda del usuario
-        const tienda = await prisma.tienda.findUnique({
-            where: { usuarioId: session.user.id },
-            select: { id: true },
+        const session = await obtenerSesionValidada();
+
+        return await runInTiendaContext(session.user.tiendaId, async () => {
+            const skip = (page - 1) * limit;
+
+            const where: any = {
+                tiendaId: session.user.tiendaId,
+                activo: true,
+            };
+
+            if (search) {
+                where.OR = [
+                    { nombre: { contains: search, mode: 'insensitive' } },
+                    { rif: { contains: search, mode: 'insensitive' } },
+                    { correo: { contains: search, mode: 'insensitive' } },
+                ];
+            }
+
+            const [proveedores, total] = await Promise.all([
+                prisma.proveedor.findMany({
+                    where,
+                    orderBy: { createdAt: 'desc' },
+                    skip,
+                    take: limit,
+                }),
+                prisma.proveedor.count({ where }),
+            ]);
+
+            return {
+                proveedores,
+                total,
+                totalPages: Math.ceil(total / limit)
+            };
         });
-
-        if (!tienda) return { error: 'No tienes una tienda configurada' };
-
-        const skip = (page - 1) * limit;
-
-        const where: any = {
-            tiendaId: tienda.id,
-            activo: true,
-        };
-
-        if (search) {
-            where.OR = [
-                { nombre: { contains: search, mode: 'insensitive' } },
-                { rif: { contains: search, mode: 'insensitive' } },
-                { correo: { contains: search, mode: 'insensitive' } },
-            ];
-        }
-
-        const [proveedores, total] = await Promise.all([
-            prisma.proveedor.findMany({
-                where,
-                orderBy: { createdAt: 'desc' },
-                skip,
-                take: limit,
-            }),
-            prisma.proveedor.count({ where }),
-        ]);
-
-        return {
-            proveedores,
-            total,
-            totalPages: Math.ceil(total / limit)
-        };
     } catch (error) {
         console.error('Error listando proveedores:', error);
         return { error: 'Error al obtener proveedores' };
@@ -75,26 +69,20 @@ export async function listarProveedores(
 }
 
 export async function crearProveedor(data: CrearProveedorDTO) {
-    const session = await auth();
-    if (!session?.user?.id) return { error: 'No autorizado' };
-
     try {
-        const tienda = await prisma.tienda.findUnique({
-            where: { usuarioId: session.user.id },
-            select: { id: true },
+        const session = await obtenerSesionValidada();
+
+        return await runInTiendaContext(session.user.tiendaId, async () => {
+            const nuevoProveedor = await prisma.proveedor.create({
+                data: {
+                    ...data,
+                    tiendaId: session.user.tiendaId!,
+                },
+            });
+
+            revalidatePath('/proveedores');
+            return { success: true, proveedor: nuevoProveedor };
         });
-
-        if (!tienda) return { error: 'Tienda no encontrada' };
-
-        const nuevoProveedor = await prisma.proveedor.create({
-            data: {
-                ...data,
-                tiendaId: tienda.id,
-            },
-        });
-
-        revalidatePath('/proveedores');
-        return { success: true, proveedor: nuevoProveedor };
     } catch (error) {
         console.error('Error creando proveedor:', error);
         return { error: 'Error al crear el proveedor' };
@@ -102,40 +90,50 @@ export async function crearProveedor(data: CrearProveedorDTO) {
 }
 
 export async function actualizarProveedor(data: ActualizarProveedorDTO) {
-    const session = await auth();
-    if (!session?.user?.id) return { error: 'No autorizado' };
-
     try {
+        const session = await obtenerSesionValidada();
         const { id, ...updateData } = data;
 
-        await prisma.proveedor.update({
-            where: { id },
-            data: updateData,
+        await verificarAccesoRecurso(id, 'proveedor', session, {
+            accion: 'UPDATE',
+            ruta: '/dashboard/proveedores/editar'
         });
 
-        revalidatePath('/proveedores');
-        return { success: true };
-    } catch (error) {
+        return await runInTiendaContext(session.user.tiendaId, async () => {
+            await prisma.proveedor.update({
+                where: { id },
+                data: updateData,
+            });
+
+            revalidatePath('/proveedores');
+            return { success: true };
+        });
+    } catch (error: any) {
         console.error('Error actualizando proveedor:', error);
-        return { error: 'Error al actualizar' };
+        return { error: error.message || 'Error al actualizar' };
     }
 }
 
 export async function eliminarProveedor(id: string) {
-    const session = await auth();
-    if (!session?.user?.id) return { error: 'No autorizado' };
-
     try {
-        // Soft delete (marcar como inactivo)
-        await prisma.proveedor.update({
-            where: { id },
-            data: { activo: false },
+        const session = await obtenerSesionValidada();
+        await verificarAccesoRecurso(id, 'proveedor', session, {
+            accion: 'DELETE',
+            ruta: '/dashboard/proveedores'
         });
 
-        revalidatePath('/proveedores');
-        return { success: true };
-    } catch (error) {
+        return await runInTiendaContext(session.user.tiendaId, async () => {
+            // Soft delete (marcar como inactivo)
+            await prisma.proveedor.update({
+                where: { id },
+                data: { activo: false },
+            });
+
+            revalidatePath('/proveedores');
+            return { success: true };
+        });
+    } catch (error: any) {
         console.error('Error eliminando proveedor:', error);
-        return { error: 'Error al eliminar' };
+        return { error: error.message || 'Error al eliminar' };
     }
 }

@@ -3,6 +3,7 @@
 import prisma from '@/lib/prisma';
 import { auth } from '@/auth';
 import { revalidatePath } from 'next/cache';
+import { verificarAccesoRecurso } from '@/lib/auth/permissions';
 
 export async function getProductos(
     page: number = 1,
@@ -106,14 +107,11 @@ export async function toggleProductoDisponible(id: string, disponible: boolean) 
 
         if (!tienda) return { error: 'Tienda no encontrada' };
 
-        // Verify ownership
-        const producto = await prisma.producto.findUnique({
-            where: { id },
+        // Verify ownership and log unauthorized access if attempted
+        await verificarAccesoRecurso(id, 'producto', session, {
+            accion: 'UPDATE',
+            ruta: '/dashboard/productos'
         });
-
-        if (!producto || producto.tiendaId !== tienda.id) {
-            return { error: 'No autorizado' };
-        }
 
         await prisma.producto.update({
             where: { id },
@@ -139,14 +137,11 @@ export async function deleteProducto(id: string) {
 
         if (!tienda) return { error: 'Tienda no encontrada' };
 
-        // Verify ownership
-        const producto = await prisma.producto.findUnique({
-            where: { id },
+        // Verify ownership and log unauthorized access if attempted
+        await verificarAccesoRecurso(id, 'producto', session, {
+            accion: 'DELETE',
+            ruta: '/dashboard/productos'
         });
-
-        if (!producto || producto.tiendaId !== tienda.id) {
-            return { error: 'No autorizado' };
-        }
 
         await prisma.producto.delete({
             where: { id },
@@ -361,11 +356,11 @@ export async function updateProducto(id: string, formData: FormData) {
 
         if (!tienda) return { error: 'No tienes una tienda registrada' };
 
-        // Verify ownership
-        const existing = await prisma.producto.findUnique({ where: { id } });
-        if (!existing || existing.tiendaId !== tienda.id) {
-            return { error: 'No autorizado' };
-        }
+        // Verify ownership and log unauthorized access if attempted
+        await verificarAccesoRecurso(id, 'producto', session, {
+            accion: 'UPDATE',
+            ruta: '/dashboard/productos/editar'
+        });
 
         const nombre = formData.get('nombre') as string;
         const codigoOEM = formData.get('codigoOEM') as string || null;

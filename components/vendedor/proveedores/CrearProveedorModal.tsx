@@ -118,7 +118,7 @@ export function CrearProveedorModal({ isOpen, onClose, proveedorAEditar, onSucce
                 result = await crearProveedor(payload);
             }
 
-            if (result.error) {
+            if ('error' in result && result.error) {
                 setError(result.error);
             } else {
                 onSuccess();
